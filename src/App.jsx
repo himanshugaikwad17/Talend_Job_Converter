@@ -25,11 +25,10 @@ function App() {
     formData.append('file', itemFile);
 
     try {
-      const res = await fetch('http://localhost:5000/upload?fake_edges=false', {
-      method: 'POST',
-      body: formData,
-});
-
+      const res = await fetch('http://localhost:5000/upload', {
+        method: 'POST',
+        body: formData,
+      });
 
       if (!res.ok) {
         const errorText = await res.text();
@@ -37,7 +36,6 @@ function App() {
       }
 
       const data = await res.json();
-
       setNodes(data.nodes || []);
       setEdges(data.edges || []);
       setJobName(itemFile.name.replace('.item', ''));
@@ -51,50 +49,70 @@ function App() {
     setSelectedNode(node);
   };
 
-const generateDag = () => {
-  if (!jobName || nodes.length === 0) return;
+  const generateDag = () => {
+    if (!jobName || nodes.length === 0) return;
 
-  const lines = [];
-  lines.push("from airflow import DAG");
-  lines.push("from airflow.operators.python import PythonOperator");
-  lines.push("from datetime import datetime");
-  lines.push("");
-  lines.push(`default_args = {`);
-  lines.push(`    "owner": "airflow",`);
-  lines.push(`    "start_date": datetime(2023, 1, 1),`);
-  lines.push(`}`);
-  lines.push("");
-  lines.push(`with DAG("${jobName}", default_args=default_args, schedule_interval=None, catchup=False) as dag:`);
-
-  // Add all task definitions
-  nodes.forEach((n) => {
-    const taskName = `task_${n.id}`;
-    const label = n.data.label || n.id;
-
+    const lines = [];
+    lines.push("from airflow import DAG");
+    lines.push("from airflow.operators.python import PythonOperator");
+    lines.push("from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook");
+    lines.push("from airflow.providers.odbc.hooks.odbc import OdbcHook");
+    lines.push("from datetime import datetime");
+    lines.push("import logging");
     lines.push("");
-    lines.push(`    def ${taskName}_fn():`);
-    lines.push(`        print("Executing ${label}")`);
+
+    lines.push("default_args = {");
+    lines.push("    'owner': 'airflow',");
+    lines.push("    'start_date': datetime(2023, 1, 1),");
+    lines.push("}");
     lines.push("");
-    lines.push(`    ${taskName} = PythonOperator(`);
-    lines.push(`        task_id="${n.id}",`);
-    lines.push(`        python_callable=${taskName}_fn`);
-    lines.push(`    )`);
-  });
 
-  // Add edges
-  edges.forEach((e) => {
-    lines.push(`    task_${e.source} >> task_${e.target}`);
-  });
+    lines.push(`with DAG('${jobName}', default_args=default_args, schedule_interval=None, catchup=False) as dag:`);
 
-  const blob = new Blob([lines.join("\n")], { type: "text/x-python" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${jobName.replace(/\s+/g, "_")}_dag.py`;
-  a.click();
-  URL.revokeObjectURL(url);
-};
+    nodes.forEach((n) => {
+      const taskName = `task_${n.id}`;
+      const label = n.data.label?.toLowerCase() || n.id;
+      const sql = n.data.sql?.replace(/"""|'''/g, "") || "SELECT 1";
 
+      if (label.includes("connection")) return;
+
+      lines.push("");
+      lines.push(`    # ${n.data.label}`);
+
+      if (label.includes("snowflake")) {
+        lines.push(`    def ${taskName}_fn():`);
+        lines.push(`        hook = SnowflakeHook(snowflake_conn_id="snowflake_default")`);
+        lines.push(`        results = hook.get_records("""${sql}""")`);
+        lines.push(`        logging.info("Snowflake results: %s", results)`);
+      } else if (label.includes("hana")) {
+        lines.push(`    def ${taskName}_fn():`);
+        lines.push(`        hook = OdbcHook(odbc_conn_id="hana_default")`);
+        lines.push(`        results = hook.get_records("""${sql}""")`);
+        lines.push(`        logging.info("HANA results: %s", results)`);
+      } else {
+        lines.push(`    def ${taskName}_fn():`);
+        lines.push(`        logging.info("Executing generic task: ${label}")`);
+      }
+
+      lines.push(``);
+      lines.push(`    ${taskName} = PythonOperator(`);
+      lines.push(`        task_id="${n.id}",`);
+      lines.push(`        python_callable=${taskName}_fn`);
+      lines.push(`    )`);
+    });
+
+    edges.forEach((e) => {
+      lines.push(`    task_${e.source} >> task_${e.target}`);
+    });
+
+    const blob = new Blob([lines.join("\n")], { type: "text/x-python" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${jobName.replace(/\s+/g, "_")}_dag.py`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <Box sx={{ height: '100%' }}>
