@@ -22,3 +22,20 @@ Then open the printed local URL in your browser. If uploading directories is blo
 - Generate a Python file containing a skeleton Airflow DAG. Database connections reference credentials from AWS Secrets Manager.
 
 This is a basic demo and may need adjustments for different Talend documentation formats.
+
+## Job Comparison Reports
+
+A helper script in `backend/compare_job_dag.py` lets you compare a Talend `.item` file with a generated Airflow DAG using Groq's `scout` model. Set the `GROQ_API_KEY` environment variable with your API key and run:
+
+```bash
+python backend/compare_job_dag.py path/to/job.item path/to/dag.py
+```
+
+Install the Python dependencies first:
+
+```bash
+pip install -r backend/requirements.txt
+```
+
+The script extracts job steps and task IDs then sends them to Groq to list discrepancies or missing conversions.
+
