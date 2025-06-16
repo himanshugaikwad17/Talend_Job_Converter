@@ -9,6 +9,7 @@ import {
   Toolbar,
   Typography,
   Box,
+  Paper,
   CssBaseline,
 } from '@mui/material';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
@@ -115,7 +116,35 @@ function App() {
       "from hana_hook import HanaHook",
       "from datetime import datetime",
       "",
-      `with DAG("${jobName}", start_date=datetime(2023, 1, 1), schedule_interval=None, catchup=False) as dag:`,
+      "EXTRA_EMAILS = [",
+      "    \"XXXXXXXXXXXXXXXXXXXXXXXXXXX\"",
+      "]",
+      "",
+      "def is_prod():",
+      "    return False",
+      "",
+      "def is_develop():",
+      "    return not is_prod()",
+      "",
+      "DEFAULT_ARGS = {",
+      "    'owner': 'airflow',",
+      "    'start_date': datetime(2023, 1, 1),",
+      "    'email': []",
+      "}",
+      "",
+      "if is_prod():",
+      "    DEFAULT_ARGS['email'].extend(EXTRA_EMAILS)",
+      "",
+      "SNOWFLAKE_CONNECTION = (",
+      "    'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' if is_develop() else 'YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY'",
+      ")",
+      "WAREHOUSE = 'XXXXXXXXXXXXXXXX' if is_prod() else 'YYYYYYYYYYYYYYYYYYY'",
+      "DATABASE = 'XXXXXXXXXXXX' if is_prod() else 'YYYYYYYYYYYY'",
+      "HANA_CONN = 'XXXXXXXXXXXXXXXXX'",
+      "SCHEMA = 'YYYYYYYYY'",
+      "DATABASE_SNOWFLAKE = 'XXXXXXXXXXXXX'",
+      "",
+      `with DAG("${jobName}", default_args=DEFAULT_ARGS, schedule_interval=None, catchup=False) as dag:`,
       "",
     ];
 
@@ -170,7 +199,7 @@ function App() {
       <Box sx={{ height: '100%' }}>
         <AppBar position="static">
           <Toolbar>
-            <Typography variant="h6" sx={{ flexGrow: 1 }}>Talend Job Converter</Typography>
+            <Typography variant="h6" sx={{ flexGrow: 1 }}>Talend2AirDAG</Typography>
             <Button color="inherit" component="label">
               Upload Folder
               <input type="file" webkitdirectory="true" multiple hidden onChange={handleFolderUpload} />
@@ -188,8 +217,8 @@ function App() {
           </Toolbar>
         </AppBar>
 
-        <Box sx={{ display: 'flex', height: 'calc(100% - 64px)' }}>
-          <Box sx={{ width: 250, overflow: 'auto', borderRight: '1px solid #ccc' }}>
+        <Box sx={{ display: 'flex', height: 'calc(100% - 64px)', p: 2 }}>
+          <Paper sx={{ width: 250, overflow: 'auto', mr: 2 }}>
             <List>
               {jobName && (
                 <ListItem button selected>
@@ -197,9 +226,9 @@ function App() {
                 </ListItem>
               )}
             </List>
-          </Box>
+          </Paper>
 
-          <Box sx={{ flexGrow: 1 }}>
+          <Paper sx={{ flexGrow: 1, p: 1 }}>
             <ReactFlowProvider>
               <ReactFlow
                 nodes={nodes}
@@ -208,7 +237,7 @@ function App() {
                 style={{ width: '100%', height: '100%' }}
               />
             </ReactFlowProvider>
-          </Box>
+          </Paper>
 
           <Drawer anchor="right" open={Boolean(selectedNode)} onClose={() => setSelectedNode(null)}>
             {selectedNode && (

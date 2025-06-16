@@ -1,4 +1,4 @@
-# Talend Job Converter
+# Talend2AirDAG
 
 This repository contains a small React application with a Material-UI interface for visualising Talend job documentation and generating a basic Airflow DAG.
 
