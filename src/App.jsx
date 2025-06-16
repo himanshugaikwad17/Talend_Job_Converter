@@ -51,35 +51,50 @@ function App() {
     setSelectedNode(node);
   };
 
-  const generateDag = () => {
-    if (!jobName || nodes.length === 0) return;
+const generateDag = () => {
+  if (!jobName || nodes.length === 0) return;
 
-    const lines = [];
-    lines.push('from airflow import DAG');
-    lines.push('from airflow.operators.python import PythonOperator');
-    lines.push('from datetime import datetime');
-    lines.push('');
-    lines.push(`with DAG("${jobName}", start_date=datetime(2023,1,1), schedule_interval=None) as dag:`);
+  const lines = [];
+  lines.push("from airflow import DAG");
+  lines.push("from airflow.operators.python import PythonOperator");
+  lines.push("from datetime import datetime");
+  lines.push("");
+  lines.push(`default_args = {`);
+  lines.push(`    "owner": "airflow",`);
+  lines.push(`    "start_date": datetime(2023, 1, 1),`);
+  lines.push(`}`);
+  lines.push("");
+  lines.push(`with DAG("${jobName}", default_args=default_args, schedule_interval=None, catchup=False) as dag:`);
 
-    nodes.forEach(n => {
-      lines.push(`    def task_${n.id}():`);
-      lines.push(`        print("Running ${n.data.label}")`);
-      lines.push('');
-      lines.push(`    op_${n.id} = PythonOperator(task_id='${n.id}', python_callable=task_${n.id})`);
-    });
+  // Add all task definitions
+  nodes.forEach((n) => {
+    const taskName = `task_${n.id}`;
+    const label = n.data.label || n.id;
 
-    edges.forEach(e => {
-      lines.push(`    op_${e.source} >> op_${e.target}`);
-    });
+    lines.push("");
+    lines.push(`    def ${taskName}_fn():`);
+    lines.push(`        print("Executing ${label}")`);
+    lines.push("");
+    lines.push(`    ${taskName} = PythonOperator(`);
+    lines.push(`        task_id="${n.id}",`);
+    lines.push(`        python_callable=${taskName}_fn`);
+    lines.push(`    )`);
+  });
 
-    const blob = new Blob([lines.join('\n')], { type: 'text/x-python' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${jobName.replace(/\s+/g, '_')}_dag.py`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+  // Add edges
+  edges.forEach((e) => {
+    lines.push(`    task_${e.source} >> task_${e.target}`);
+  });
+
+  const blob = new Blob([lines.join("\n")], { type: "text/x-python" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${jobName.replace(/\s+/g, "_")}_dag.py`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
 
   return (
     <Box sx={{ height: '100%' }}>
