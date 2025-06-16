@@ -9,6 +9,7 @@ import {
   Toolbar,
   Typography,
   Box,
+  CssBaseline,
 } from '@mui/material';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import { ReactFlowProvider, ReactFlow } from 'reactflow';
@@ -22,11 +23,14 @@ function App() {
   const theme = createTheme({
     palette: {
       primary: {
-        main: '#1976d2',
+        main: '#0288d1',
       },
       background: {
-        default: '#fafafa',
+        default: '#f5f7fa',
       },
+    },
+    typography: {
+      fontFamily: 'Inter, Roboto, Arial, sans-serif',
     },
   });
 
@@ -162,6 +166,7 @@ function App() {
 
   return (
     <ThemeProvider theme={theme}>
+      <CssBaseline />
       <Box sx={{ height: '100%' }}>
         <AppBar position="static">
           <Toolbar>
@@ -207,9 +212,17 @@ function App() {
 
           <Drawer anchor="right" open={Boolean(selectedNode)} onClose={() => setSelectedNode(null)}>
             {selectedNode && (
-              <Box sx={{ width: 250, p: 2 }}>
+              <Box sx={{ width: 300, p: 2 }}>
                 <Typography variant="h6" gutterBottom>{selectedNode.data.label}</Typography>
-                <Typography variant="body2">ID: {selectedNode.id}</Typography>
+                <Typography variant="body2" gutterBottom>ID: {selectedNode.id}</Typography>
+                {selectedNode.data.sql && (
+                  <Box component="pre" sx={{ whiteSpace: 'pre-wrap', fontSize: '0.75rem', mt: 1 }}>
+                    {selectedNode.data.sql}
+                  </Box>
+                )}
+                {selectedNode.data.procedure && (
+                  <Typography variant="body2" sx={{ mt: 1 }}>Procedure: {selectedNode.data.procedure}</Typography>
+                )}
               </Box>
             )}
           </Drawer>
