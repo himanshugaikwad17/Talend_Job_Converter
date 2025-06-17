@@ -82,61 +82,6 @@ function App() {
     setSelectedNode(node);
   };
 
-  const generateDbtDag = async () => {
-    if (!jobName) return;
-    const lines = [];
-    lines.push('# Example DBT DAG');
-    lines.push('from airflow import DAG');
-    lines.push('from airflow.operators.python import PythonOperator');
-    lines.push('from datetime import datetime');
-    lines.push('import jinja2');
-    lines.push('');
-    lines.push('DEFAULT_ARGS = {');
-    lines.push("    'owner': 'airflow',");
-    lines.push("    'start_date': datetime(2020, 7, 9),");
-    lines.push('}');
-    lines.push('');
-    lines.push(`with DAG('${jobName}_dbt', default_args=DEFAULT_ARGS, catchup=False, schedule='05 21 * * *', template_undefined=jinja2.Undefined) as dag:`);
-    lines.push('    delete_task = PythonOperator(');
-    lines.push("        task_id='delete_less_records_from_hana',");
-    lines.push('        python_callable=lambda: None');
-    lines.push('    )');
-    lines.push('    write_task = PythonOperator(');
-    lines.push("        task_id='put_to_hana',");
-    lines.push('        python_callable=lambda: None');
-    lines.push('    )');
-    lines.push('    delete_task >> write_task');
-
-    const dagContent = lines.join('\n');
-    const blob = new Blob([dagContent], { type: 'text/x-python' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${jobName.replace(/\s+/g, '_')}_dbt_dag.py`;
-    a.click();
-    URL.revokeObjectURL(url);
-
-    try {
-      const res = await fetch('http://localhost:5000/compare_dag', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          job_steps: nodes.map(n => n.id),
-          dag_text: dagContent,
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setComparisonResult(data.result);
-        setDialogOpen(true);
-      } else {
-        const errText = await res.text();
-        console.error('Comparison failed:', errText);
-      }
-    } catch (err) {
-      console.error('Comparison error:', err);
-    }
-  };
 
   const generateDag = async () => {
     if (!jobName || nodes.length === 0) return;
@@ -261,11 +206,6 @@ function App() {
             {nodes.length > 0 && (
               <Button color="inherit" onClick={generateDag}>
                 Download DAG
-              </Button>
-            )}
-            {nodes.length > 0 && (
-              <Button color="inherit" onClick={generateDbtDag} sx={{ ml: 1 }}>
-                Download DBT DAG
               </Button>
             )}
           </Toolbar>
