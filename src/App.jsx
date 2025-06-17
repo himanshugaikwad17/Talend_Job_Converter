@@ -11,6 +11,10 @@ import {
   Box,
   Paper,
   CssBaseline,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import { ReactFlowProvider, ReactFlow } from 'reactflow';
@@ -21,6 +25,8 @@ function App() {
   const [edges, setEdges] = useState([]);
   const [jobName, setJobName] = useState('');
   const [selectedNode, setSelectedNode] = useState(null);
+  const [comparisonResult, setComparisonResult] = useState('');
+  const [dialogOpen, setDialogOpen] = useState(false);
   const theme = createTheme({
     palette: {
       primary: {
@@ -34,6 +40,10 @@ function App() {
       fontFamily: 'Inter, Roboto, Arial, sans-serif',
     },
   });
+
+  const handleCloseDialog = () => {
+    setDialogOpen(false);
+  };
 
   const handleFolderUpload = async (e) => {
     const files = Array.from(e.target.files);
@@ -117,7 +127,8 @@ function App() {
       });
       if (res.ok) {
         const data = await res.json();
-        alert(data.result);
+        setComparisonResult(data.result);
+        setDialogOpen(true);
       } else {
         const errText = await res.text();
         console.error('Comparison failed:', errText);
@@ -225,7 +236,8 @@ function App() {
       });
       if (res.ok) {
         const data = await res.json();
-        alert(data.result);
+        setComparisonResult(data.result);
+        setDialogOpen(true);
       } else {
         const errText = await res.text();
         console.error('Comparison failed:', errText);
@@ -297,6 +309,17 @@ function App() {
               </Box>
             )}
           </Drawer>
+          <Dialog open={dialogOpen} onClose={handleCloseDialog} fullWidth maxWidth="sm">
+            <DialogTitle>Comparison Result</DialogTitle>
+            <DialogContent dividers>
+              <Box component="pre" sx={{ whiteSpace: 'pre-wrap' }}>
+                {comparisonResult}
+              </Box>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={handleCloseDialog}>Close</Button>
+            </DialogActions>
+          </Dialog>
         </Box>
       </Box>
     </ThemeProvider>
