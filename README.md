@@ -19,7 +19,7 @@ Then open the printed local URL in your browser. If uploading directories is blo
 - Parse each file client-side to extract component names, SQL snippets and basic dependencies.
 - Visualise the selected job using React Flow. Nodes representing `tRunJob` or joblets can be expanded.
 - Click nodes to view details and any detected SQL.
-- Generate a Python file containing a skeleton Airflow DAG. Database connections reference credentials from AWS Secrets Manager.
+- Generate a Python file containing a skeleton Airflow DAG and automatically compare it with the original job using Groq's LLM. Database connections reference credentials from AWS Secrets Manager.
 - Download a DBT-style DAG and automatically compare it with the original job using Groq's LLM.
 
 This is a basic demo and may need adjustments for different Talend documentation formats.
