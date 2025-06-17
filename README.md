@@ -20,12 +20,13 @@ Then open the printed local URL in your browser. If uploading directories is blo
 - Visualise the selected job using React Flow. Nodes representing `tRunJob` or joblets can be expanded.
 - Click nodes to view details and any detected SQL.
 - Generate a Python file containing a skeleton Airflow DAG. Database connections reference credentials from AWS Secrets Manager.
+- Download a DBT-style DAG and automatically compare it with the original job using Groq's LLM.
 
 This is a basic demo and may need adjustments for different Talend documentation formats.
 
 ## Job Comparison Reports
 
-A helper script in `backend/compare_job_dag.py` lets you compare a Talend `.item` file with a generated Airflow DAG using Groq's `scout` model. Set the `GROQ_API_KEY` environment variable with your API key and run:
+A helper script in `backend/compare_job_dag.py` lets you compare a Talend `.item` file with a generated Airflow DAG using Groq's `scout` model. The web app now exposes this functionality as well. Configure your API key and model in `backend/groq_config.json` then run the backend server.
 
 ```bash
 python backend/compare_job_dag.py path/to/job.item path/to/dag.py

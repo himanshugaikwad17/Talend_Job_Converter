@@ -72,7 +72,7 @@ function App() {
     setSelectedNode(node);
   };
 
-  const generateDbtDag = () => {
+  const generateDbtDag = async () => {
     if (!jobName) return;
     const lines = [];
     lines.push('# Example DBT DAG');
@@ -97,13 +97,34 @@ function App() {
     lines.push('    )');
     lines.push('    delete_task >> write_task');
 
-    const blob = new Blob([lines.join('\n')], { type: 'text/x-python' });
+    const dagContent = lines.join('\n');
+    const blob = new Blob([dagContent], { type: 'text/x-python' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `${jobName.replace(/\s+/g, '_')}_dbt_dag.py`;
     a.click();
     URL.revokeObjectURL(url);
+
+    try {
+      const res = await fetch('http://localhost:5000/compare_dag', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          job_steps: nodes.map(n => n.id),
+          dag_text: dagContent,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        alert(data.result);
+      } else {
+        const errText = await res.text();
+        console.error('Comparison failed:', errText);
+      }
+    } catch (err) {
+      console.error('Comparison error:', err);
+    }
   };
 
   const generateDag = () => {
