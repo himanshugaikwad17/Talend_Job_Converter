@@ -2,7 +2,7 @@ import os
 import re
 import json
 import requests
-from extract_graph import extract_from_internal_components
+from extract_graph import extract_generic_and_safe
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "groq_config.json")
@@ -14,7 +14,7 @@ def load_config():
         raise FileNotFoundError(CONFIG_PATH)
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         data = json.load(f)
-    return data.get("api_key"), data.get("model", "scout")
+    return data.get("api_key"), data.get("model", "llama3-8b-8192")
 
 
 def parse_dag_tasks(dag_path: str):
@@ -60,8 +60,11 @@ def build_prompt(job_steps, dag_tasks):
     job_json = json.dumps(job_steps, indent=2)
     dag_json = json.dumps(dag_tasks, indent=2)
     return (
-        "Compare this Talend job and this Airflow DAG and list any missing steps.\n"
-        f"Talend steps:\n{job_json}\n\nAirflow tasks:\n{dag_json}"
+        "You are a software architect verifying Talend to Airflow DAG migration.\n"
+        "Compare the Talend component list and the Airflow DAG tasks.\n"
+        "Ignore connection steps like tSnowflakeConnection or tDBConnection if they are not present in the DAG.\n"
+        "Point out any missing or extra steps in the DAG, and suggest if any Talend step has no Airflow equivalent.\n\n"
+        f"Talend Components:\n{job_json}\n\nAirflow DAG Tasks:\n{dag_json}"
     )
 
 
@@ -78,11 +81,11 @@ def main(job_file: str, dag_file: str):
     if not os.path.exists(dag_file):
         raise FileNotFoundError(dag_file)
 
-    nodes, _ = extract_from_internal_components(job_file)
+    # Unpack all three: nodes, edges, real_edges
+    nodes, _, _ = extract_generic_and_safe(job_file)
     job_steps = [n["id"] for n in nodes]
 
     dag_tasks = parse_dag_tasks(dag_file)
-
     prompt = build_prompt(job_steps, dag_tasks)
     result = call_groq(prompt)
     print(result)

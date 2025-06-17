@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import tempfile
 import os
-from extract_graph import extract_from_internal_components
+from extract_graph import extract_generic_and_safe
 from compare_job_dag import compare_job_and_dag
 
 app = Flask(__name__)
@@ -22,8 +22,12 @@ def upload_item_file():
         temp_path = temp.name
 
     try:
-        nodes, edges = extract_from_internal_components(temp_path)
-        return jsonify({'nodes': nodes, 'edges': edges})
+        nodes, edges, real_edges =extract_generic_and_safe(temp_path)
+        return jsonify({
+                'nodes': nodes,
+                'edges': edges,           # Visualization edges (real + synthetic fallback)
+                'real_edges': real_edges  # Used for actual DAG generation
+                      })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     finally:
