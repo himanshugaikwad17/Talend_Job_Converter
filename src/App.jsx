@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import {
   Button, List, ListItem, ListItemText, Drawer, AppBar, Toolbar, Typography,
-  Box, Paper, CssBaseline, Dialog, DialogTitle, DialogContent, DialogActions,
-  Switch, FormControlLabel
+  Box, Paper, CssBaseline, Dialog, DialogTitle, DialogContent, DialogActions
 } from '@mui/material';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import { ReactFlowProvider, ReactFlow } from 'reactflow';
@@ -10,9 +9,7 @@ import 'reactflow/dist/style.css';
 
 function App() {
   const [nodes, setNodes] = useState([]);
-  const [edges, setEdges] = useState([]);
   const [realEdges, setRealEdges] = useState([]);
-  const [showSynthetic, setShowSynthetic] = useState(true);
   const [jobName, setJobName] = useState('');
   const [selectedNode, setSelectedNode] = useState(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -38,7 +35,6 @@ function App() {
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       setNodes(data.nodes || []);
-      setEdges(data.edges || []);
       setRealEdges(data.real_edges || []);
       setJobName(itemFile.name.replace('.item', ''));
     } catch (err) {
@@ -48,7 +44,6 @@ function App() {
   };
 
   const onNodeClick = (event, node) => setSelectedNode(node);
-  const getVisibleEdges = () => (showSynthetic ? edges : realEdges);
 
   const generateDag = async () => {
     if (!jobName || nodes.length === 0) return;
@@ -108,8 +103,7 @@ function App() {
     }
 
     const edgeLines = [];
-    const edgeSource = realEdges.length > 0 ? realEdges : edges;
-    edgeSource.forEach(e => {
+    realEdges.forEach(e => {
       const source = taskMap[e.source];
       const target = taskMap[e.target];
       if (source && target && source !== target) {
@@ -160,11 +154,6 @@ function App() {
               <input type="file" webkitdirectory="true" multiple hidden onChange={handleFolderUpload} />
             </Button>
             <Button color="inherit" onClick={generateDag}>Download DAG</Button>
-            <FormControlLabel
-              control={<Switch checked={showSynthetic} onChange={() => setShowSynthetic(!showSynthetic)} />}
-              label="Show synthetic links"
-              sx={{ ml: 2 }}
-            />
           </Toolbar>
         </AppBar>
 
@@ -188,7 +177,7 @@ function App() {
                     opacity: n.data.status === 'inactive' ? 0.6 : 1
                   }
                 }))}
-                edges={getVisibleEdges()}
+                edges={realEdges}
                 onNodeClick={onNodeClick}
                 style={{ width: '100%', height: '100%' }}
               />
