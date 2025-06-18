@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   Button, List, ListItem, ListItemText, Drawer, AppBar, Toolbar, Typography,
   Box, Paper, CssBaseline, Dialog, DialogTitle, DialogContent, DialogActions
@@ -10,7 +10,8 @@ import ReactFlow, {
   Controls,
   Background,
   useNodesState,
-  useEdgesState
+  useEdgesState,
+  MarkerType
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
@@ -26,7 +27,7 @@ function App() {
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
   const theme = createTheme({
-    palette: { primary: { main: '#0288d1' }, background: { default: '#f5f7fa' } },
+    palette: { primary: { main: '#007acc' }, background: { default: '#f4f6f8' } },
     typography: { fontFamily: 'Inter, Roboto, Arial, sans-serif' },
   });
 
@@ -44,15 +45,51 @@ function App() {
       const res = await fetch('http://localhost:5000/upload', { method: 'POST', body: formData });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
-      setAllNodes(data.nodes || []);
+
+      const alignedNodes = autoAlignGraph(data.nodes || [], data.edges || []);
+      setAllNodes(alignedNodes);
       setAllEdges(data.edges || []);
-      setNodes(data.nodes || []);
+      setNodes(alignedNodes);
       setEdges(data.edges || []);
       setJobName(itemFile.name.replace('.item', ''));
     } catch (err) {
       console.error("Upload failed:", err);
       alert("Failed to parse job. Check console.");
     }
+  };
+
+  const autoAlignGraph = (nodes, edges) => {
+    const idToNode = Object.fromEntries(nodes.map(n => [n.id, n]));
+    const inDegree = {};
+    edges.forEach(e => { inDegree[e.target] = (inDegree[e.target] || 0) + 1 });
+
+    const levels = [];
+    const visited = new Set();
+    const queue = nodes.filter(n => !inDegree[n.id]);
+
+    let x = 50;
+    while (queue.length) {
+      const level = [];
+      const nextQueue = [];
+
+      queue.forEach((n, i) => {
+        level.push({ ...n, position: { x, y: i * 180 + 100 } });
+        visited.add(n.id);
+
+        edges.filter(e => e.source === n.id).forEach(e => {
+          if (!visited.has(e.target)) {
+            inDegree[e.target]--;
+            if (inDegree[e.target] === 0) nextQueue.push(idToNode[e.target]);
+          }
+        });
+      });
+
+      levels.push(...level);
+      queue.splice(0, queue.length, ...nextQueue);
+      x += 280;
+    }
+
+    return levels;
   };
 
   const onNodeClick = (event, node) => setSelectedNode(node);
@@ -74,7 +111,7 @@ function App() {
       "from datetime import datetime",
       "",
       "DEFAULT_ARGS = { 'owner': 'airflow', 'start_date': datetime(2023, 1, 1), 'email': [] }",
-      `with DAG(\"${jobName}\", default_args=DEFAULT_ARGS, schedule_interval=None, catchup=False) as dag:`
+      `with DAG("${jobName}", default_args=DEFAULT_ARGS, schedule_interval=None, catchup=False) as dag:`
     ];
 
     const taskMap = {};
@@ -88,7 +125,7 @@ function App() {
       taskMap[node.id] = uniqueId;
 
       operatorLines.push(`    def task_${uniqueId}_fn():`);
-      operatorLines.push(`        print(\"Executing ${node.data.label}\")`);
+      operatorLines.push(`        print("Executing ${node.data.label}")`);
       operatorLines.push(`\n    task_${uniqueId} = PythonOperator(`);
       operatorLines.push(`        task_id='${uniqueId}',`);
       operatorLines.push(`        python_callable=task_${uniqueId}_fn`);
@@ -151,10 +188,18 @@ function App() {
         </AppBar>
 
         <Box sx={{ display: 'flex', height: 'calc(100% - 64px)', p: 2 }}>
-          <Paper sx={{ width: 250, overflow: 'auto', mr: 2 }}>
-            <List>{jobName && (<ListItem><ListItemText primary={jobName} /></ListItem>)}</List>
+          <Paper sx={{ width: 250, overflow: 'auto', mr: 2, p: 1 }} elevation={3}>
+            <Typography variant="h6" sx={{ mb: 1 }}>Components</Typography>
+            <List>
+              {nodes.map((node) => (
+                <ListItem key={node.id} button onClick={() => setSelectedNode(node)}>
+                  <ListItemText primary={node.data.label} />
+                </ListItem>
+              ))}
+            </List>
           </Paper>
-          <Paper sx={{ flexGrow: 1, p: 1 }}>
+
+          <Paper sx={{ flexGrow: 1, p: 1 }} elevation={3}>
             <ReactFlowProvider>
               <ReactFlow
                 nodes={nodes.map(n => ({
@@ -164,6 +209,9 @@ function App() {
                     background: n.data.status === 'active' ? '#ffffff'
                       : n.data.status === 'deactivated' ? '#ffebee' : '#eeeeee',
                     border: '1px solid #bbb',
+                    borderRadius: '6px',
+                    padding: 8,
+                    fontSize: '12px',
                     opacity: n.data.status === 'inactive' ? 0.6 : 1
                   }
                 }))}
@@ -191,7 +239,7 @@ function App() {
             )}
           </Drawer>
 
-          <Dialog open={dialogOpen} onClose={handleCloseDialog}>
+          <Dialog open={dialogOpen} onClose={handleCloseDialog} maxWidth="md" fullWidth>
             <DialogTitle>Comparison Result</DialogTitle>
             <DialogContent><Box component="pre">{comparisonResult}</Box></DialogContent>
             <DialogActions><Button onClick={handleCloseDialog}>Close</Button></DialogActions>
