@@ -108,87 +108,6 @@ function App() {
 
   const onNodeClick = (event, node) => setSelectedNode(node);
 
-  const generateDag = async () => {
-    if (!jobName || nodes.length === 0) return;
-
-    const activeNodes = nodes.filter(n => n.data.status === 'active');
-    if (activeNodes.length === 0) {
-      setSnackbar({ open: true, message: "No active components to generate DAG.", severity: 'warning' });
-      return;
-    }
-
-    setLoading(true);
-
-    const lines = [
-      "from airflow import DAG",
-      "from airflow.operators.python import PythonOperator",
-      "from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook",
-      "from hana_hook import HanaHook",
-      "from datetime import datetime",
-      "",
-      "DEFAULT_ARGS = { 'owner': 'airflow', 'start_date': datetime(2023, 1, 1), 'email': [] }",
-      `with DAG("${jobName}", default_args=DEFAULT_ARGS, schedule_interval=None, catchup=False) as dag:`
-    ];
-
-    const taskMap = {};
-    let counter = {};
-    const operatorLines = [];
-
-    for (const node of activeNodes) {
-      let base = node.id.replace(/[^a-zA-Z0-9_]/g, '_');
-      counter[base] = (counter[base] || 0) + 1;
-      const uniqueId = `${base}_${counter[base]}`;
-      taskMap[node.id] = uniqueId;
-
-      operatorLines.push(`    def task_${uniqueId}_fn():`);
-      operatorLines.push(`        print("Executing ${node.data.label}")`);
-      operatorLines.push(`\n    task_${uniqueId} = PythonOperator(`);
-      operatorLines.push(`        task_id='${uniqueId}',`);
-      operatorLines.push(`        python_callable=task_${uniqueId}_fn`);
-      operatorLines.push(`    )\n`);
-    }
-
-    const edgeLines = [];
-    allEdges.forEach(e => {
-      const source = taskMap[e.source];
-      const target = taskMap[e.target];
-      if (source && target && source !== target) {
-        edgeLines.push(`    task_${source} >> task_${target}`);
-      }
-    });
-
-    const dagContent = [...lines, ...operatorLines, ...edgeLines].join('\n');
-    const blob = new Blob([dagContent], { type: "text/x-python" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${jobName.replace(/\s+/g, "_")}_dag.py`;
-    a.click();
-    URL.revokeObjectURL(url);
-
-    try {
-      const res = await fetch('http://localhost:5000/compare_dag', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          job_steps: activeNodes.map(n => n.id),
-          dag_text: dagContent,
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setComparisonResult(data.result);
-        setDialogOpen(true);
-      } else {
-        const errText = await res.text();
-        console.error('Comparison failed:', errText);
-      }
-    } catch (err) {
-      console.error('Comparison error:', err);
-    }
-    setLoading(false);
-  };
-
   const handleGenerateDagAI = async () => {
     if (!jobName || nodes.length === 0) return;
     setLoading(true);
@@ -273,16 +192,6 @@ function App() {
                   hidden
                   onChange={handleFolderUpload}
                 />
-              </Button>
-              <Button
-                variant="contained"
-                color="primary"
-                startIcon={<DownloadIcon />}
-                onClick={generateDag}
-                disabled={nodes.length === 0 || loading}
-                sx={{ mr: 2 }}
-              >
-                Download DAG
               </Button>
               <Button
                 variant="contained"
