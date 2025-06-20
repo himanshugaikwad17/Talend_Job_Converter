@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import {
   Button, List, ListItem, ListItemText, Drawer, AppBar, Toolbar, Typography,
   Box, Paper, CssBaseline, Dialog, DialogTitle, DialogContent, DialogActions,
-  Snackbar, Alert, CircularProgress, IconButton, Tooltip
+  Snackbar, Alert, CircularProgress, IconButton, Tooltip, Divider, Chip,
+  ListItemIcon, Accordion, AccordionSummary, AccordionDetails
 } from '@mui/material';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import ReactFlow, {
@@ -13,9 +14,16 @@ import ReactFlow, {
   useNodesState,
   useEdgesState,
 } from 'reactflow';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { materialDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import DownloadIcon from '@mui/icons-material/Download';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import CodeIcon from '@mui/icons-material/Code';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import CancelIcon from '@mui/icons-material/Cancel';
+import PauseCircleIcon from '@mui/icons-material/PauseCircle';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import 'reactflow/dist/style.css';
 
 function App() {
@@ -218,25 +226,203 @@ function App() {
           {/* Main Layout */}
           <Box sx={{ display: 'flex', flexGrow: 1, overflow: 'hidden', p: 2 }}>
             {/* Components List */}
-            <Paper sx={{ width: 260, overflow: 'auto', mr: 2, p: 2, borderRadius: 3, boxShadow: 2 }}>
-              <Typography variant="h6" sx={{ mb: 1, color: 'primary.main' }}>Components</Typography>
-              <List>
-                {nodes.map((node) => (
-                  <ListItem
-                    key={node.id}
-                    button
-                    onClick={() => setSelectedNode(node)}
-                    sx={{
-                      bgcolor: selectedNode?.id === node.id ? 'primary.light' : 'inherit',
-                      borderRadius: 2,
-                      mb: 1,
-                      '&:hover': { bgcolor: 'primary.lighter' }
+            <Paper sx={{ width: 280, overflow: 'auto', mr: 2, p: 2, borderRadius: 3, boxShadow: 2 }}>
+              <Typography variant="h6" sx={{ mb: 2, color: 'primary.main', fontWeight: 600 }}>
+                Job Components
+              </Typography>
+              
+              {/* Summary Stats */}
+              <Box sx={{ mb: 2, p: 1.5, bgcolor: 'grey.50', borderRadius: 2 }}>
+                <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1 }}>
+                  Component Status Summary
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                  <Chip 
+                    icon={<CheckCircleIcon />}
+                    label={`${nodes.filter(n => n.data.status === 'active').length} Active`}
+                    size="small"
+                    color="success"
+                    variant="outlined"
+                  />
+                  <Chip 
+                    icon={<PauseCircleIcon />}
+                    label={`${nodes.filter(n => n.data.status === 'inactive').length} Inactive`}
+                    size="small"
+                    color="warning"
+                    variant="outlined"
+                  />
+                  <Chip 
+                    icon={<CancelIcon />}
+                    label={`${nodes.filter(n => n.data.status === 'deactivated').length} Deactivated`}
+                    size="small"
+                    color="error"
+                    variant="outlined"
+                  />
+                </Box>
+              </Box>
+
+              {/* Active Components */}
+              <Accordion defaultExpanded sx={{ mb: 1, '&:before': { display: 'none' } }}>
+                <AccordionSummary 
+                  expandIcon={<ExpandMoreIcon />}
+                  sx={{ 
+                    bgcolor: 'success.light', 
+                    color: 'success.contrastText',
+                    borderRadius: 1,
+                    '&:hover': { bgcolor: 'success.main' }
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                    <CheckCircleIcon sx={{ mr: 1 }} />
+                    <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                      Active Components ({nodes.filter(n => n.data.status === 'active').length})
+                    </Typography>
+                  </Box>
+                </AccordionSummary>
+                <AccordionDetails sx={{ p: 0 }}>
+                  <List dense>
+                    {nodes
+                      .filter(node => node.data.status === 'active')
+                      .map((node) => (
+                        <ListItem
+                          key={node.id}
+                          button
+                          onClick={() => setSelectedNode(node)}
+                          sx={{
+                            bgcolor: selectedNode?.id === node.id ? 'success.light' : 'inherit',
+                            borderRadius: 1,
+                            mb: 0.5,
+                            '&:hover': { bgcolor: 'success.lighter' }
+                          }}
+                        >
+                          <ListItemIcon sx={{ minWidth: 32 }}>
+                            <CheckCircleIcon color="success" fontSize="small" />
+                          </ListItemIcon>
+                          <ListItemText 
+                            primary={node.data.label}
+                            secondary={node.data.component_type}
+                            primaryTypographyProps={{ fontSize: '0.875rem', fontWeight: 500 }}
+                            secondaryTypographyProps={{ fontSize: '0.75rem' }}
+                          />
+                        </ListItem>
+                      ))}
+                  </List>
+                </AccordionDetails>
+              </Accordion>
+
+              {/* Inactive Components */}
+              {nodes.filter(n => n.data.status === 'inactive').length > 0 && (
+                <Accordion sx={{ mb: 1, '&:before': { display: 'none' } }}>
+                  <AccordionSummary 
+                    expandIcon={<ExpandMoreIcon />}
+                    sx={{ 
+                      bgcolor: 'warning.light', 
+                      color: 'warning.contrastText',
+                      borderRadius: 1,
+                      '&:hover': { bgcolor: 'warning.main' }
                     }}
                   >
-                    <ListItemText primary={node.data.label} />
-                  </ListItem>
-                ))}
-              </List>
+                    <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                      <PauseCircleIcon sx={{ mr: 1 }} />
+                      <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                        Inactive Components ({nodes.filter(n => n.data.status === 'inactive').length})
+                      </Typography>
+                    </Box>
+                  </AccordionSummary>
+                  <AccordionDetails sx={{ p: 0 }}>
+                    <List dense>
+                      {nodes
+                        .filter(node => node.data.status === 'inactive')
+                        .map((node) => (
+                          <ListItem
+                            key={node.id}
+                            button
+                            onClick={() => setSelectedNode(node)}
+                            sx={{
+                              bgcolor: selectedNode?.id === node.id ? 'warning.light' : 'inherit',
+                              borderRadius: 1,
+                              mb: 0.5,
+                              '&:hover': { bgcolor: 'warning.lighter' }
+                            }}
+                          >
+                            <ListItemIcon sx={{ minWidth: 32 }}>
+                              <PauseCircleIcon color="warning" fontSize="small" />
+                            </ListItemIcon>
+                            <ListItemText 
+                              primary={node.data.label}
+                              secondary={node.data.component_type}
+                              primaryTypographyProps={{ fontSize: '0.875rem', fontWeight: 500 }}
+                              secondaryTypographyProps={{ fontSize: '0.75rem' }}
+                            />
+                          </ListItem>
+                        ))}
+                    </List>
+                  </AccordionDetails>
+                </Accordion>
+              )}
+
+              {/* Deactivated Components */}
+              {nodes.filter(n => n.data.status === 'deactivated').length > 0 && (
+                <Accordion sx={{ mb: 1, '&:before': { display: 'none' } }}>
+                  <AccordionSummary 
+                    expandIcon={<ExpandMoreIcon />}
+                    sx={{ 
+                      bgcolor: 'error.light', 
+                      color: 'error.contrastText',
+                      borderRadius: 1,
+                      '&:hover': { bgcolor: 'error.main' }
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                      <CancelIcon sx={{ mr: 1 }} />
+                      <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                        Deactivated Components ({nodes.filter(n => n.data.status === 'deactivated').length})
+                      </Typography>
+                    </Box>
+                  </AccordionSummary>
+                  <AccordionDetails sx={{ p: 0 }}>
+                    <List dense>
+                      {nodes
+                        .filter(node => node.data.status === 'deactivated')
+                        .map((node) => (
+                          <ListItem
+                            key={node.id}
+                            button
+                            onClick={() => setSelectedNode(node)}
+                            sx={{
+                              bgcolor: selectedNode?.id === node.id ? 'error.light' : 'inherit',
+                              borderRadius: 1,
+                              mb: 0.5,
+                              '&:hover': { bgcolor: 'error.lighter' }
+                            }}
+                          >
+                            <ListItemIcon sx={{ minWidth: 32 }}>
+                              <CancelIcon color="error" fontSize="small" />
+                            </ListItemIcon>
+                            <ListItemText 
+                              primary={node.data.label}
+                              secondary={node.data.component_type}
+                              primaryTypographyProps={{ fontSize: '0.875rem', fontWeight: 500 }}
+                              secondaryTypographyProps={{ fontSize: '0.75rem' }}
+                            />
+                          </ListItem>
+                        ))}
+                    </List>
+                  </AccordionDetails>
+                </Accordion>
+              )}
+
+              {/* No Components Message */}
+              {nodes.length === 0 && (
+                <Box sx={{ textAlign: 'center', py: 3, color: 'text.secondary' }}>
+                  <Typography variant="body2">
+                    No components loaded
+                  </Typography>
+                  <Typography variant="caption">
+                    Upload a Talend job to see components
+                  </Typography>
+                </Box>
+              )}
             </Paper>
 
             {/* Graph */}
@@ -270,19 +456,90 @@ function App() {
             </Paper>
 
             {/* Node Drawer */}
-            <Drawer anchor="right" open={!!selectedNode} onClose={() => setSelectedNode(null)}>
+            <Drawer 
+              anchor="right" 
+              open={!!selectedNode} 
+              onClose={() => setSelectedNode(null)}
+              PaperProps={{ sx: { width: 480 } }}
+            >
               {selectedNode && (
-                <Box sx={{ width: 320, p: 3 }}>
-                  <Typography variant="h6" sx={{ color: 'primary.main' }}>{selectedNode.data.label}</Typography>
-                  <Typography variant="body2" sx={{ mt: 1 }}>ID: {selectedNode.id}</Typography>
-                  <Typography variant="body2">Status: {selectedNode.data.status}</Typography>
-                  {selectedNode.data.sql && (
-                    <Box component="pre" sx={{
-                      mt: 2, bgcolor: '#f5f5f5', p: 2, borderRadius: 2, fontSize: 13, overflowX: 'auto'
-                    }}>
-                      {selectedNode.data.sql}
+                <Box sx={{ p: 3 }}>
+                  <Typography variant="h6" sx={{ color: 'primary.main', mb: 2, display: 'flex', alignItems: 'center' }}>
+                    <CodeIcon sx={{ mr: 1 }} />
+                    Component Details
+                  </Typography>
+                  
+                  {/* Basic Info */}
+                  <Paper sx={{ p: 2, mb: 2, borderRadius: 2 }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                      {selectedNode.data.label}
+                    </Typography>
+                    <Box sx={{ mt: 1 }}>
+                      <Chip 
+                        label={selectedNode.data.status} 
+                        size="small"
+                        color={
+                          selectedNode.data.status === 'active' ? 'success' :
+                          selectedNode.data.status === 'deactivated' ? 'error' : 'default'
+                        }
+                        sx={{ mr: 1 }}
+                      />
+                      <Chip 
+                        label={selectedNode.id} 
+                        size="small" 
+                        variant="outlined"
+                      />
                     </Box>
+                  </Paper>
+                  
+                  {/* SQL Content */}
+                  {selectedNode.data.sql && (
+                    <Paper sx={{ mt: 3, borderRadius: 2, overflow: 'hidden' }}>
+                      <Box sx={{ bgcolor: 'grey.900', px: 2, py: 1 }}>
+                        <Typography variant="subtitle2" sx={{ color: 'white' }}>
+                          SQL Query
+                        </Typography>
+                      </Box>
+                      <Box sx={{ maxHeight: 400, overflow: 'auto' }}>
+                        <SyntaxHighlighter 
+                          language="sql"
+                          style={materialDark}
+                          customStyle={{ margin: 0, borderRadius: 0 }}
+                        >
+                          {selectedNode.data.sql}
+                        </SyntaxHighlighter>
+                      </Box>
+                    </Paper>
                   )}
+                  
+                  {/* Component Type Info */}
+                  <Paper sx={{ p: 2, mt: 2, borderRadius: 2 }}>
+                    <Typography variant="subtitle2" sx={{ color: 'text.secondary', mb: 1 }}>
+                      Component Type
+                    </Typography>
+                    <Typography variant="body2">
+                      {selectedNode.data.component_type || 'Unknown'}
+                    </Typography>
+                  </Paper>
+                  
+                  {/* Connections */}
+                  <Paper sx={{ p: 2, mt: 2, borderRadius: 2 }}>
+                    <Typography variant="subtitle2" sx={{ color: 'text.secondary', mb: 1 }}>
+                      Connections
+                    </Typography>
+                    <Box>
+                      {edges
+                        .filter(e => e.source === selectedNode.id || e.target === selectedNode.id)
+                        .map((edge, idx) => (
+                          <Typography key={idx} variant="body2" sx={{ mb: 0.5 }}>
+                            {edge.source === selectedNode.id ? 'Output → ' : '← Input: '}
+                            {nodes.find(n => 
+                              n.id === (edge.source === selectedNode.id ? edge.target : edge.source)
+                            )?.data.label || 'Unknown'}
+                          </Typography>
+                        ))}
+                    </Box>
+                  </Paper>
                 </Box>
               )}
             </Drawer>
