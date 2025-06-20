@@ -49,11 +49,40 @@ def call_groq(prompt: str) -> str:
         "messages": [
             {"role": "user", "content": prompt},
         ],
+        "max_tokens": 4000,  # Limit response size
+        "temperature": 0.3,  # Lower temperature for more focused responses
     }
-    resp = requests.post(GROQ_API_URL, headers=headers, json=payload, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
-    return data["choices"][0]["message"]["content"].strip()
+    
+    # Retry logic with exponential backoff
+    max_retries = 3
+    base_timeout = 60  # Increased timeout
+    
+    for attempt in range(max_retries):
+        try:
+            resp = requests.post(
+                GROQ_API_URL, 
+                headers=headers, 
+                json=payload, 
+                timeout=base_timeout * (2 ** attempt)  # Exponential backoff: 60s, 120s, 240s
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return data["choices"][0]["message"]["content"].strip()
+            
+        except requests.exceptions.Timeout:
+            if attempt == max_retries - 1:
+                raise RuntimeError(f"Groq API request timed out after {max_retries} attempts")
+            print(f"Attempt {attempt + 1} timed out, retrying...")
+            continue
+            
+        except requests.exceptions.RequestException as e:
+            if attempt == max_retries - 1:
+                raise RuntimeError(f"Groq API request failed: {str(e)}")
+            print(f"Attempt {attempt + 1} failed: {str(e)}, retrying...")
+            continue
+    
+    # This should never be reached, but just in case
+    raise RuntimeError("Groq API request failed after all retry attempts")
 
 
 def build_prompt(job_steps, dag_tasks):

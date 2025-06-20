@@ -3,7 +3,8 @@ import {
   Button, List, ListItem, ListItemText, Drawer, AppBar, Toolbar, Typography,
   Box, Paper, CssBaseline, Dialog, DialogTitle, DialogContent, DialogActions,
   Snackbar, Alert, CircularProgress, IconButton, Tooltip, Divider, Chip,
-  ListItemIcon, Accordion, AccordionSummary, AccordionDetails
+  ListItemIcon, Accordion, AccordionSummary, AccordionDetails, Table,
+  TableBody, TableCell, TableContainer, TableHead, TableRow, Grid
 } from '@mui/material';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import ReactFlow, {
@@ -24,6 +25,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CancelIcon from '@mui/icons-material/Cancel';
 import PauseCircleIcon from '@mui/icons-material/PauseCircle';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import 'reactflow/dist/style.css';
 
 function App() {
@@ -37,6 +39,17 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [aiDagDialogOpen, setAiDagDialogOpen] = useState(false);
   const [aiDagCode, setAiDagCode] = useState('');
+  const [lineageDialogOpen, setLineageDialogOpen] = useState(false);
+  const [lineageData, setLineageData] = useState(null);
+  const [lineageLoading, setLineageLoading] = useState(false);
+  const [sqlDialogOpen, setSqlDialogOpen] = useState(false);
+  const [selectedSql, setSelectedSql] = useState(null);
+  const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
+  const [previewDagCode, setPreviewDagCode] = useState('');
+  const [showLineage, setShowLineage] = useState(false);
+  const [manualSqlDialogOpen, setManualSqlDialogOpen] = useState(false);
+  const [currentComponentIndex, setCurrentComponentIndex] = useState(0);
+  const [manualDagCode, setManualDagCode] = useState('');
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -158,6 +171,141 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
+  const handleDownloadUpdatedDag = () => {
+    const blob = new Blob([aiDagCode], { type: 'text/x-python' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${jobName.replace(/\s+/g, '_')}_updated_dag.py`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleLineageComparison = async () => {
+    if (!jobName || nodes.length === 0 || !aiDagCode) {
+      setSnackbar({ open: true, message: 'Please generate a DAG first', severity: 'warning' });
+      return;
+    }
+    
+    setLineageLoading(true);
+    try {
+      const job_structure = {
+        nodes: allNodes,
+        edges: allEdges,
+        jobName,
+      };
+      
+      const res = await fetch('http://localhost:5000/generate_lineage_comparison', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          job_structure,
+          dag_code: aiDagCode 
+        }),
+      });
+      
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      
+      // Forcefully replace the SQL in the mapping with the original, full SQL from allNodes
+      if (data.lineage_mapping) {
+          data.lineage_mapping.forEach(mapping => {
+              if (mapping.talend_component) {
+                  const originalNode = allNodes.find(n => n.id === mapping.talend_component.id);
+                  if (originalNode && originalNode.data.sql) {
+                      mapping.talend_component.sql = originalNode.data.sql;
+                  }
+              }
+          });
+      }
+      
+      setLineageData(data);
+      setLineageDialogOpen(true);
+      setSnackbar({ open: true, message: 'Lineage comparison ready!', severity: 'success' });
+    } catch (err) {
+      setSnackbar({ open: true, message: 'Lineage comparison failed. Check console.', severity: 'error' });
+      console.error('Lineage comparison error:', err);
+    }
+    setLineageLoading(false);
+  };
+
+  const handleManualSqlInjection = () => {
+    if (!lineageData || !lineageData.lineage_mapping || !aiDagCode) {
+      setSnackbar({ open: true, message: 'Please run lineage comparison first', severity: 'warning' });
+      return;
+    }
+    
+    // Filter components that have SQL
+    const componentsWithSql = lineageData.lineage_mapping.filter(
+      mapping => mapping.talend_component && mapping.talend_component.sql
+    );
+    
+    if (componentsWithSql.length === 0) {
+      setSnackbar({ open: true, message: 'No components with SQL found', severity: 'info' });
+      return;
+    }
+    
+    setManualDagCode(aiDagCode);
+    setCurrentComponentIndex(0);
+    setManualSqlDialogOpen(true);
+    setLineageDialogOpen(false);
+  };
+
+  const handleInjectSqlForComponent = (componentIndex) => {
+    if (!lineageData || !lineageData.lineage_mapping) return;
+    
+    const componentsWithSql = lineageData.lineage_mapping.filter(
+      mapping => mapping.talend_component && mapping.talend_component.sql
+    );
+    
+    if (componentIndex >= componentsWithSql.length) return;
+    
+    const mapping = componentsWithSql[componentIndex];
+    const talendComponent = mapping.talend_component;
+    const airflowTask = mapping.airflow_task;
+    
+    if (!airflowTask) {
+      setSnackbar({ open: true, message: `No Airflow task found for ${talendComponent.name}`, severity: 'warning' });
+      return;
+    }
+    
+    // Find and replace the SQL in the DAG code
+    let updatedDagCode = manualDagCode;
+    const taskPattern = new RegExp(`(${airflowTask.variable_name}\\s*=\\s*SnowflakeOperator\\s*\\([^)]*sql\\s*=\\s*['"\`]?)[^'"\`]*['"\`]?`, 'g');
+    
+    if (taskPattern.test(updatedDagCode)) {
+      updatedDagCode = updatedDagCode.replace(taskPattern, `$1'''${talendComponent.sql}'''`);
+      setManualDagCode(updatedDagCode);
+      setSnackbar({ open: true, message: `SQL injected for ${talendComponent.name}`, severity: 'success' });
+    } else {
+      setSnackbar({ open: true, message: `Could not find task ${airflowTask.task_id} in DAG`, severity: 'error' });
+    }
+  };
+
+  const handleNextComponent = () => {
+    const componentsWithSql = lineageData.lineage_mapping.filter(
+      mapping => mapping.talend_component && mapping.talend_component.sql
+    );
+    
+    if (currentComponentIndex < componentsWithSql.length - 1) {
+      setCurrentComponentIndex(currentComponentIndex + 1);
+    }
+  };
+
+  const handlePreviousComponent = () => {
+    if (currentComponentIndex > 0) {
+      setCurrentComponentIndex(currentComponentIndex - 1);
+    }
+  };
+
+  const handleFinishManualInjection = () => {
+    setAiDagCode(manualDagCode);
+    setPreviewDagCode(manualDagCode);
+    setPreviewDialogOpen(true);
+    setManualSqlDialogOpen(false);
+    setSnackbar({ open: true, message: 'Manual SQL injection completed! Preview the updated DAG.', severity: 'success' });
+  };
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -208,6 +356,16 @@ function App() {
                 disabled={nodes.length === 0 || loading}
               >
                 Generate DAG with AI
+              </Button>
+              <Button
+                variant="outlined"
+                color="primary"
+                onClick={handleLineageComparison}
+                disabled={nodes.length === 0 || !aiDagCode || lineageLoading}
+                startIcon={<CompareArrowsIcon />}
+                sx={{ ml: 2 }}
+              >
+                {lineageLoading ? 'Analyzing...' : 'Compare Lineage'}
               </Button>
             </Toolbar>
           </AppBar>
@@ -567,7 +725,519 @@ function App() {
               </DialogContent>
               <DialogActions>
                 <Button onClick={handleDownloadAIDag} disabled={!aiDagCode}>Download</Button>
+                <Button onClick={handleDownloadUpdatedDag} disabled={!aiDagCode}>Download Updated</Button>
                 <Button onClick={() => setAiDagDialogOpen(false)}>Close</Button>
+              </DialogActions>
+            </Dialog>
+            
+            {/* Lineage Comparison Dialog */}
+            <Dialog open={lineageDialogOpen} onClose={() => setLineageDialogOpen(false)} maxWidth="lg" fullWidth>
+              <DialogTitle>
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                  <CompareArrowsIcon sx={{ mr: 1 }} />
+                  Lineage Comparison: Talend → Airflow
+                </Box>
+              </DialogTitle>
+              <DialogContent>
+                {lineageData && (
+                  <Box sx={{ mt: 2 }}>
+                    {/* Summary Stats */}
+                    <Paper sx={{ p: 2, mb: 3, bgcolor: 'grey.50' }}>
+                      <Typography variant="h6" sx={{ mb: 2, color: 'primary.main' }}>
+                        Migration Summary
+                      </Typography>
+                      <Grid container spacing={2}>
+                        <Grid item xs={3}>
+                          <Box sx={{ textAlign: 'center' }}>
+                            <Typography variant="h4" color="primary">
+                              {lineageData.comparison_summary.talend_components}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              Talend Components
+                            </Typography>
+                          </Box>
+                        </Grid>
+                        <Grid item xs={3}>
+                          <Box sx={{ textAlign: 'center' }}>
+                            <Typography variant="h4" color="secondary">
+                              {lineageData.comparison_summary.airflow_tasks}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              Airflow Tasks
+                            </Typography>
+                          </Box>
+                        </Grid>
+                        <Grid item xs={3}>
+                          <Box sx={{ textAlign: 'center' }}>
+                            <Typography variant="h4" color="success.main">
+                              {lineageData.comparison_summary.mapping_percentage}%
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              Mapping Success
+                            </Typography>
+                          </Box>
+                        </Grid>
+                        <Grid item xs={3}>
+                          <Box sx={{ textAlign: 'center' }}>
+                            <Typography variant="h4" color="warning.main">
+                              {lineageData.comparison_summary.unmapped_components}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              Unmapped
+                            </Typography>
+                          </Box>
+                        </Grid>
+                      </Grid>
+                    </Paper>
+
+                    {/* Detailed Mapping Table */}
+                    <Paper sx={{ mb: 3 }}>
+                      <Box sx={{ p: 2, bgcolor: 'primary.main', color: 'white' }}>
+                        <Typography variant="h6">
+                          Component Mapping Details
+                        </Typography>
+                      </Box>
+                      <TableContainer>
+                        <Table>
+                          <TableHead>
+                            <TableRow>
+                              <TableCell sx={{ fontWeight: 600 }}>Talend Component</TableCell>
+                              <TableCell sx={{ fontWeight: 600 }}>Type</TableCell>
+                              <TableCell sx={{ fontWeight: 600 }}>Airflow Task</TableCell>
+                              <TableCell sx={{ fontWeight: 600 }}>Operator</TableCell>
+                              <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
+                              <TableCell sx={{ fontWeight: 600 }}>Confidence</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {lineageData.lineage_mapping.map((mapping, index) => (
+                              <TableRow key={index}>
+                                <TableCell>
+                                  <Box>
+                                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                                      {mapping.talend_component.name}
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                      {mapping.talend_component.id}
+                                    </Typography>
+                                  </Box>
+                                </TableCell>
+                                <TableCell>
+                                  <Chip 
+                                    label={mapping.talend_component.type} 
+                                    size="small" 
+                                    variant="outlined"
+                                  />
+                                </TableCell>
+                                <TableCell>
+                                  {mapping.airflow_task ? (
+                                    <Box>
+                                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                                        {mapping.airflow_task.task_id}
+                                      </Typography>
+                                      <Typography variant="caption" color="text.secondary">
+                                        {mapping.airflow_task.variable_name}
+                                      </Typography>
+                                      {/* Add SQL preview button if component has SQL */}
+                                      {mapping.talend_component.sql && (
+                                        <IconButton
+                                          size="small"
+                                          onClick={() => {
+                                            setSelectedSql({
+                                              talendSql: mapping.talend_component.sql,
+                                              componentName: mapping.talend_component.name,
+                                              taskId: mapping.airflow_task.task_id
+                                            });
+                                            setSqlDialogOpen(true);
+                                          }}
+                                          sx={{ ml: 1 }}
+                                        >
+                                          <CodeIcon fontSize="small" />
+                                        </IconButton>
+                                      )}
+                                    </Box>
+                                  ) : (
+                                    <Typography variant="body2" color="text.secondary">
+                                      Not mapped
+                                    </Typography>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  {mapping.airflow_task ? (
+                                    <Chip 
+                                      label={mapping.airflow_task.operator_type} 
+                                      size="small" 
+                                      color="primary"
+                                    />
+                                  ) : (
+                                    <Typography variant="body2" color="text.secondary">
+                                      -
+                                    </Typography>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <Chip 
+                                    label={mapping.mapping_type === 'direct' ? 'Direct Match' :
+                                          mapping.mapping_type === 'connection' ? 'Connection Mapped' :
+                                          mapping.mapping_type === 'sql_execution' ? 'SQL Execution' :
+                                          'Unmapped'}
+                                    size="small"
+                                    color={mapping.mapping_type === 'unmapped' ? 'warning' : 'success'}
+                                    icon={mapping.mapping_type === 'unmapped' ? <CancelIcon /> : <CheckCircleIcon />}
+                                  />
+                                  {mapping.notes && (
+                                    <Typography variant="caption" display="block" sx={{ mt: 0.5, color: 'text.secondary' }}>
+                                      {mapping.notes}
+                                    </Typography>
+                                  )}
+                                </TableCell>
+
+                                {/* Add confidence indicator */}
+                                <TableCell>
+                                  <Chip 
+                                    label={mapping.confidence}
+                                    size="small"
+                                    color={
+                                      mapping.confidence === 'high' ? 'success' :
+                                      mapping.confidence === 'medium' ? 'primary' :
+                                      'warning'
+                                    }
+                                    variant="outlined"
+                                  />
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                            
+                            {/* Add mapping type summary */}
+                            <TableRow sx={{ bgcolor: 'grey.50' }}>
+                              <TableCell colSpan={6}>
+                                <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', py: 1 }}>
+                                  <Typography variant="subtitle2" sx={{ color: 'text.secondary' }}>
+                                    Mapping Types:
+                                  </Typography>
+                                  <Chip 
+                                    label={`${lineageData.comparison_summary.mapping_details.direct_mappings} Direct`}
+                                    size="small"
+                                    color="success"
+                                    variant="outlined"
+                                  />
+                                  <Chip 
+                                    label={`${lineageData.comparison_summary.mapping_details.connection_mappings} Connection`}
+                                    size="small"
+                                    color="primary"
+                                    variant="outlined"
+                                  />
+                                  <Chip 
+                                    label={`${lineageData.comparison_summary.mapping_details.sql_mappings} SQL`}
+                                    size="small"
+                                    color="secondary"
+                                    variant="outlined"
+                                  />
+                                </Box>
+                              </TableCell>
+                            </TableRow>
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                    </Paper>
+
+                    {/* Flow Comparison */}
+                    <Paper>
+                      <Box sx={{ p: 2, bgcolor: 'secondary.main', color: 'white' }}>
+                        <Typography variant="h6">
+                          Data Flow Comparison
+                        </Typography>
+                      </Box>
+                      <Box sx={{ p: 2 }}>
+                        <Grid container spacing={3}>
+                          <Grid item xs={6}>
+                            <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 600 }}>
+                              Talend Flow Connections
+                            </Typography>
+                            <List dense>
+                              {lineageData.talend_flow.connections.map((conn, index) => (
+                                <ListItem key={index} sx={{ py: 0.5 }}>
+                                  <ListItemIcon sx={{ minWidth: 32 }}>
+                                    <Box sx={{ width: 8, height: 8, bgcolor: 'primary.main', borderRadius: '50%' }} />
+                                  </ListItemIcon>
+                                  <ListItemText 
+                                    primary={`${conn.from} → ${conn.to}`}
+                                    primaryTypographyProps={{ fontSize: '0.875rem' }}
+                                  />
+                                </ListItem>
+                              ))}
+                            </List>
+                          </Grid>
+                          <Grid item xs={6}>
+                            <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 600 }}>
+                              Airflow Dependencies
+                            </Typography>
+                            <List dense>
+                              {lineageData.airflow_dag.map((task, index) => (
+                                <ListItem key={index} sx={{ py: 0.5 }}>
+                                  <ListItemIcon sx={{ minWidth: 32 }}>
+                                    <Box sx={{ width: 8, height: 8, bgcolor: 'secondary.main', borderRadius: '50%' }} />
+                                  </ListItemIcon>
+                                  <ListItemText 
+                                    primary={`${task.task_id} → ${task.dependencies.join(', ') || 'None'}`}
+                                    primaryTypographyProps={{ fontSize: '0.875rem' }}
+                                  />
+                                </ListItem>
+                              ))}
+                            </List>
+                          </Grid>
+                        </Grid>
+                      </Box>
+                    </Paper>
+                  </Box>
+                )}
+              </DialogContent>
+              <DialogActions>
+                <Button onClick={() => setLineageDialogOpen(false)}>Close</Button>
+                <Button 
+                  variant="contained" 
+                  color="primary"
+                  onClick={handleManualSqlInjection}
+                  disabled={!lineageData || lineageLoading}
+                >
+                  Manual SQL Injection
+                </Button>
+                <Button 
+                  variant="outlined"
+                  color="secondary"
+                  onClick={handleDownloadUpdatedDag}
+                  disabled={!aiDagCode}
+                  startIcon={<DownloadIcon />}
+                >
+                  Download Updated DAG
+                </Button>
+              </DialogActions>
+            </Dialog>
+
+            {/* SQL Preview Dialog */}
+            <Dialog 
+              open={sqlDialogOpen} 
+              onClose={() => setSqlDialogOpen(false)} 
+              maxWidth="md" 
+              fullWidth
+            >
+              <DialogTitle>
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                  <CodeIcon sx={{ mr: 1 }} />
+                  SQL Mapping Details
+                </Box>
+              </DialogTitle>
+              <DialogContent>
+                {selectedSql && (
+                  <Box sx={{ mt: 2 }}>
+                    {/* Component Info */}
+                    <Paper sx={{ p: 2, mb: 3, bgcolor: 'primary.light', color: 'primary.contrastText' }}>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                        {selectedSql.componentName}
+                      </Typography>
+                      <Typography variant="body2">
+                        Mapped to Airflow task: {selectedSql.taskId}
+                      </Typography>
+                    </Paper>
+
+                    {/* SQL Code */}
+                    <Typography variant="subtitle2" sx={{ mb: 1, color: 'text.secondary' }}>
+                      SQL Statement
+                    </Typography>
+                    <Paper sx={{ mb: 3 }}>
+                      <Box sx={{ maxHeight: 400, overflow: 'auto' }}>
+                        <SyntaxHighlighter 
+                          language="sql"
+                          style={materialDark}
+                          customStyle={{ margin: 0, borderRadius: 4 }}
+                        >
+                          {selectedSql.talendSql}
+                        </SyntaxHighlighter>
+                      </Box>
+                    </Paper>
+
+                    {/* Usage Info */}
+                    <Paper sx={{ p: 2, bgcolor: 'success.light', color: 'success.contrastText' }}>
+                      <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                        ✓ SQL Successfully Mapped
+                      </Typography>
+                      <Typography variant="body2">
+                        This SQL has been automatically included in the corresponding Airflow task.
+                      </Typography>
+                    </Paper>
+                  </Box>
+                )}
+              </DialogContent>
+              <DialogActions>
+                <Button onClick={() => setSqlDialogOpen(false)}>Close</Button>
+              </DialogActions>
+            </Dialog>
+
+            {/* Manual SQL Injection Dialog */}
+            <Dialog 
+              open={manualSqlDialogOpen} 
+              onClose={() => setManualSqlDialogOpen(false)} 
+              maxWidth="lg" 
+              fullWidth
+            >
+              <DialogTitle>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    <CodeIcon sx={{ mr: 1 }} />
+                    Manual SQL Injection
+                  </Box>
+                  {lineageData && (
+                    <Chip 
+                      label={`${currentComponentIndex + 1} of ${lineageData.lineage_mapping.filter(m => m.talend_component?.sql).length}`}
+                      color="primary"
+                      variant="outlined"
+                    />
+                  )}
+                </Box>
+              </DialogTitle>
+              <DialogContent>
+                {lineageData && lineageData.lineage_mapping && (() => {
+                  const componentsWithSql = lineageData.lineage_mapping.filter(
+                    mapping => mapping.talend_component && mapping.talend_component.sql
+                  );
+                  
+                  if (currentComponentIndex >= componentsWithSql.length) return null;
+                  
+                  const mapping = componentsWithSql[currentComponentIndex];
+                  const talendComponent = mapping.talend_component;
+                  const airflowTask = mapping.airflow_task;
+                  
+                  return (
+                    <Box sx={{ mt: 2 }}>
+                      {/* Component Info */}
+                      <Paper sx={{ p: 2, mb: 3, bgcolor: 'primary.light', color: 'primary.contrastText' }}>
+                        <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                          {talendComponent.name}
+                        </Typography>
+                        <Typography variant="body2">
+                          Type: {talendComponent.type}
+                        </Typography>
+                        {airflowTask && (
+                          <Typography variant="body2">
+                            Airflow Task: {airflowTask.task_id}
+                          </Typography>
+                        )}
+                      </Paper>
+
+                      {/* SQL Code */}
+                      <Typography variant="subtitle2" sx={{ mb: 1, color: 'text.secondary' }}>
+                        SQL Statement to Inject
+                      </Typography>
+                      <Paper sx={{ mb: 3 }}>
+                        <Box sx={{ maxHeight: 300, overflow: 'auto' }}>
+                          <SyntaxHighlighter 
+                            language="sql"
+                            style={materialDark}
+                            customStyle={{ margin: 0, borderRadius: 4 }}
+                          >
+                            {talendComponent.sql}
+                          </SyntaxHighlighter>
+                        </Box>
+                      </Paper>
+
+                      {/* Action Buttons */}
+                      <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+                        <Button 
+                          variant="contained" 
+                          color="primary"
+                          onClick={() => handleInjectSqlForComponent(currentComponentIndex)}
+                          disabled={!airflowTask}
+                        >
+                          Inject SQL into Task
+                        </Button>
+                        {!airflowTask && (
+                          <Typography variant="body2" color="error">
+                            No Airflow task found for this component
+                          </Typography>
+                        )}
+                      </Box>
+
+                      {/* Navigation */}
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Button 
+                          onClick={handlePreviousComponent}
+                          disabled={currentComponentIndex === 0}
+                        >
+                          Previous
+                        </Button>
+                        <Typography variant="body2" color="text.secondary">
+                          Component {currentComponentIndex + 1} of {componentsWithSql.length}
+                        </Typography>
+                        <Button 
+                          onClick={handleNextComponent}
+                          disabled={currentComponentIndex === componentsWithSql.length - 1}
+                        >
+                          Next
+                        </Button>
+                      </Box>
+                    </Box>
+                  );
+                })()}
+              </DialogContent>
+              <DialogActions>
+                <Button onClick={() => setManualSqlDialogOpen(false)}>Cancel</Button>
+                <Button 
+                  variant="contained" 
+                  color="success"
+                  onClick={handleFinishManualInjection}
+                >
+                  Finish & Apply Changes
+                </Button>
+              </DialogActions>
+            </Dialog>
+
+            {/* DAG Preview Dialog */}
+            <Dialog 
+              open={previewDialogOpen} 
+              onClose={() => setPreviewDialogOpen(false)} 
+              maxWidth="lg" 
+              fullWidth
+            >
+              <DialogTitle>
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                  <CodeIcon sx={{ mr: 1 }} />
+                  Updated DAG Preview
+                </Box>
+              </DialogTitle>
+              <DialogContent>
+                <Box sx={{ mt: 2 }}>
+                  <Paper sx={{ p: 2, mb: 3, bgcolor: 'success.light', color: 'success.contrastText' }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
+                      ✓ Manual SQL Injection Complete!
+                    </Typography>
+                    <Typography variant="body2">
+                      Review the updated DAG code below. You can now download the final version.
+                    </Typography>
+                  </Paper>
+                  <Paper>
+                    <Box sx={{ maxHeight: 600, overflow: 'auto' }}>
+                      <SyntaxHighlighter 
+                        language="python"
+                        style={materialDark}
+                        customStyle={{ margin: 0, borderRadius: 4 }}
+                        showLineNumbers={true}
+                      >
+                        {previewDagCode}
+                      </SyntaxHighlighter>
+                    </Box>
+                  </Paper>
+                </Box>
+              </DialogContent>
+              <DialogActions>
+                <Button onClick={() => setPreviewDialogOpen(false)}>Close</Button>
+                <Button 
+                  variant="contained"
+                  color="primary"
+                  onClick={handleDownloadUpdatedDag}
+                  startIcon={<DownloadIcon />}
+                >
+                  Download Updated DAG
+                </Button>
               </DialogActions>
             </Dialog>
           </Box>
